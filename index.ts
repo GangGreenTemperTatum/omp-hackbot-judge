@@ -212,8 +212,8 @@ export function createHackbotJudge(env: Env, fetchImpl?: FetchImpl): (pi: Extens
 		pi.registerCommand("hackbot-judge", {
 			description: "Rubric judge: status | on [rubric path] | off | try <shell command>",
 			handler: async (args, ctx) => {
-				const [verb = "", ...rest] = args.trim().split(/\s+/);
-				const argument = rest.join(" ");
+				const [verb = ""] = args.trim().split(/\s+/, 1);
+				const argument = args.trim().slice(verb.length).trim();
 				if (verb === "on") {
 					const error = attach(argument || undefined);
 					if (error) return ctx.ui.notify(`hackbot-judge: not attached (${error})`, "error");
@@ -222,7 +222,8 @@ export function createHackbotJudge(env: Env, fetchImpl?: FetchImpl): (pi: Extens
 					config = configError = undefined;
 					delete env.OMP_HACKBOT_JUDGE;
 					log({ event: "detached" });
-				} else if (verb === "try" && argument && config) {
+				} else if (verb === "try" && argument) {
+					if (!config) return ctx.ui.notify("hackbot-judge: attach a rubric before `try`", "warning");
 					const verdict = await judge("bash", JSON.stringify({ command: argument }), ctx);
 					log({ event: "try", command: argument, allowed: verdict.allowed, pAllow: verdict.pAllow, reason: verdict.reason });
 					return ctx.ui.notify(`hackbot-judge: ${describe("bash", verdict)}`, verdict.allowed ? "info" : "warning");

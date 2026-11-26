@@ -304,6 +304,12 @@ describe("/hackbot-judge", () => {
 		expect(await sessions(env, never)[0].toolCall?.(bash("curl https://x"), ctx())).toBeUndefined();
 	});
 
+	test("on takes the rest of the line as the path, spaces included", async () => {
+		const spaced = join(dir, "my  rubric.md");
+		writeFileSync(spaced, rubricText);
+		expect((await run(sessions({}, never)[0], `on   ${spaced} `))[0]).toStartWith("info: hackbot-judge: on, rubric");
+	});
+
 	test("on without a path re-attaches the rubric named at launch", async () => {
 		const [s] = sessions({ ...on }, answer("deny", 0));
 		await run(s, "off");
@@ -337,6 +343,6 @@ describe("/hackbot-judge", () => {
 
 	test("anything else prints usage", async () => {
 		expect(await run(sessions({ ...on }, never)[0], "bogus")).toEqual(["warning: usage: /hackbot-judge [on [rubric path] | off | try <shell command>]"]);
-		expect(await run(sessions({}, never)[0], "try ls")).toEqual(["warning: usage: /hackbot-judge [on [rubric path] | off | try <shell command>]"]);
+		expect(await run(sessions({}, never)[0], "try ls")).toEqual(["warning: hackbot-judge: attach a rubric before `try`"]);
 	});
 });

@@ -149,8 +149,9 @@ for c in "${@:-${all[@]}}"; do
 		;;
 	dotenv)
 		# omp reads .env from the working directory, and the agent may be able to write one. It must
-		# not weaken a judge the operator attached: no setting skips tools, and a verdict needs an
-		# "allow" choice whatever the threshold.
+		# not weaken a judge the operator attached. The planted file names a setting that does not
+		# exist (no setting skips tools: this case fails if one is ever added) and a near-zero
+		# threshold (a verdict needs an "allow" choice whatever the threshold).
 		run dotenv "$p_deny" "$on"
 		check "bash call denied by the rubric" "$decisions | length >= 1 and all(.[]; .allowed == false and .reason == \"rubric forbids\")"
 		marker absent

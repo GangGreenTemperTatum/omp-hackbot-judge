@@ -4,6 +4,7 @@ set -uo pipefail
 cp -r /repo "$HOME/plugin" && cd "$HOME/plugin" || exit 1
 out=/out
 [ -d "$out" ] && [ -w "$out" ] || out="$HOME/out"
+[ "$#" -gt 0 ] || { echo "usage: stages.sh <stage>..." >&2; exit 2; }
 status=0
 load=hook # becomes "plugin" once a stage has installed the plugin
 # shellcheck disable=SC2086

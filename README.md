@@ -8,7 +8,7 @@ It is for security agents that run unattended: bug bounty, pentest and red-team 
 - **Uses omp's own judge.** Any native model from `omp models --kind=judge`, through omp's judge client and omp's stored credential. No extra API key, no HTTP code of its own.
 - **Fail-closed.** Once a rubric is attached, anything that stops the judge from reaching a verdict blocks the call.
 - **Attach and detach freely.** Per launch with one environment variable, or inside a session with `/hackbot-judge on <rubric>` and `/hackbot-judge off`.
-- **Small.** One file of about 250 lines, no runtime dependencies, no build step, six settings.
+- **Small.** One file of about 250 lines, no runtime dependencies, no build step, seven settings.
 
 ## What it looks like
 
@@ -29,9 +29,10 @@ When uncertain, deny.
 A real session under the [example rubric](examples/bug-bounty-rubric.md), from this repository's dogfood test. The agent was asked to fetch headers from two hosts, and from the first again without the header:
 
 ```text
-ALLOW  P(allow) 0.99  bash  curl -sS -D - -o /dev/null -H 'X-Bug-Bounty: researcher-handle' https://example.com/
-DENY   P(allow) 0.00  bash  curl -sS -D - -o /dev/null https://example.org/
-DENY   P(allow) 0.02  bash  curl -sS -D - -o /dev/null https://example.com/
+        P(allow)  time   tool  input
+ALLOW   0.99      167ms  bash  {"command":"curl -sS -D - -o /dev/null -H 'X-Bug-Bounty: researcher-handle' https://example.com/", …}
+DENY    0         210ms  bash  {"command":"curl -sS -D - -o /dev/null https://example.org/", …}
+DENY    0.02      171ms  bash  {"command":"curl -sS -D - -o /dev/null https://example.com/", …}
 ```
 
 The first command runs. The other two never start; the agent gets this as the tool's error and moves on:
@@ -70,7 +71,7 @@ omp
 | Command | Effect |
 |---|---|
 | `/hackbot-judge` | Show status: off, on (rubric hash, model, judgments used, last decision), or misconfigured. |
-| `/hackbot-judge on /abs/path/rubric.md` | Attach that rubric. With no path, re-attach the one named at launch. |
+| `/hackbot-judge on /abs/path/rubric.md` | Attach that rubric. With no path, re-attach the last one named, at launch or by this command. With `OMP_HACKBOT_JUDGE_SHA256` set, only a rubric matching the pin attaches. |
 | `/hackbot-judge off` | Detach. Tool calls run unjudged again. |
 | `/hackbot-judge try <shell command>` | Ask the judge about a `bash` command without running it. Use it to tune a rubric. |
 
@@ -115,11 +116,11 @@ omp adds its own net: a `tool_call` handler that throws or runs past 30 s also b
 - **The log** (`OMP_HACKBOT_JUDGE_LOG`), one JSON object per line:
 
   ```json
-  {"ts":"…","event":"armed","rubricSha256":"…","policySha256":"…"}
+  {"ts":"…","event":"armed","rubricSha256":"…","policySha256":"…","model":"openrouter/typesafe/jev-1.14","minP":0.8}
   {"ts":"…","event":"decision","agent":"…","tool":"bash","toolCallId":"…","allowed":false,"pAllow":0.01,"reason":"rubric forbids","latencyMs":204,"inputSha256":"…","input":"{\"command\":\"curl …\"}"}
   ```
 
-  - `armed` is written once per session that starts with the judge on, subagents included, with the model and threshold in force. `attached`, `detached` and `try` record the slash commands.
+  - `armed` is written once per session that starts with the judge on, subagents included, with the model and threshold in force, or an `error` when the rubric could not be loaded. `attached`, `detached` and `try` record the slash commands.
   - `rubricSha256` identifies the rubric. `policySha256` identifies the model, threshold and question, so records from different setups are not mixed up.
   - `reason` is `rubric permits`, `rubric forbids`, `P(allow) … below …`, or the error that blocked the call.
   - `input` is the tool input, cut at 4 KiB. It can contain secrets from command lines; keep the log out of git, and outside the agent's working directory so the agent cannot read the probabilities or edit the record.
