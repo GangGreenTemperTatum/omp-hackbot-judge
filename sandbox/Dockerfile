@@ -1,5 +1,5 @@
 # Disposable test box: its own HOME, omp install and ~/.omp, sharing nothing with the host's omp.
-FROM oven/bun:1.3-debian
+FROM oven/bun:1.4-debian
 
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends ca-certificates curl git jq \
