@@ -56,10 +56,11 @@ jobs:
           # Ignore .pr_agent.toml in this repository and in a pr-agent-settings repository.
           config.use_repo_settings_file: "false"
           config.use_global_settings_file: "false"
-          # On a new pull request: review and suggest improvements, without rewriting its description.
+          # On a new pull request: write its description, review it and suggest improvements.
+          # The description keeps the author's text and leaves the title alone.
+          github_action_config.auto_describe: "true"
           github_action_config.auto_review: "true"
           github_action_config.auto_improve: "true"
-          github_action_config.auto_describe: "false"
           # Send the model the pull request only, not the issues it links to.
           pr_reviewer.require_ticket_analysis_review: "false"
           # Reactions and labels would need the wider `issues: write` permission.

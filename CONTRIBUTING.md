@@ -34,7 +34,7 @@ The `commit-msg` hook checks commits locally and CI checks the pull request titl
 
 ## AI review
 
-[PR-Agent](https://github.com/The-PR-Agent/pr-agent) reviews pull requests opened from branches of this repository. It comments only: it cannot push or merge. A pull request from a fork is reviewed when the maintainer comments `/review` on it. The security model is at the top of [`.github/workflows/pr-agent.yml`](.github/workflows/pr-agent.yml).
+[PR-Agent](https://github.com/The-PR-Agent/pr-agent) describes and reviews pull requests opened from branches of this repository. It adds a summary to the description and posts comments: it cannot push or merge. A pull request from a fork is reviewed when the maintainer comments `/review` on it. The security model is at the top of [`.github/workflows/pr-agent.yml`](.github/workflows/pr-agent.yml).
 
 ## Principles
 
