@@ -48,7 +48,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           # Any OpenRouter model: set the repository variable PR_AGENT_MODEL to openrouter/<vendor>/<model>.
-          config.model: ${{ vars.PR_AGENT_MODEL || 'openrouter/anthropic/claude-sonnet-5.5' }}
+          config.model: ${{ vars.PR_AGENT_MODEL || 'openrouter/moonshotai/kimi-k3.1-pro' }}
+          # Context window for a model this PR-Agent release has no built-in limit for. PR-Agent still
+          # sends at most config.max_model_tokens (32000) per request.
+          config.custom_model_max_tokens: "1048576"
           config.fallback_models: "[]"
           # Ignore .pr_agent.toml in this repository and in a pr-agent-settings repository.
           config.use_repo_settings_file: "false"
