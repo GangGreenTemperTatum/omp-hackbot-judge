@@ -90,7 +90,13 @@ type Fetch = (url: string | URL | Request, init?: RequestInit) => Promise<Respon
 type Handler = (event: Record<string, unknown>, ctx: unknown) => Promise<unknown>;
 type Session = { toolCall?: Handler; command?: (args: string, ctx: unknown) => Promise<void> };
 
-const MODEL = { provider: "openrouter", id: "typesafe/jev-1.14", api: "openrouter-decisions", baseUrl: "https://openrouter.test/api/alpha", input: ["text"] };
+const MODEL = {
+	provider: "openrouter",
+	id: "typesafe/jev-1.14",
+	api: "openrouter-decisions",
+	baseUrl: "https://openrouter.test/api/alpha",
+	input: ["text"],
+};
 
 /** What a session shows its operator, plus the registry omp hands an extension. */
 function ctx(overrides: Record<string, unknown> = {}) {
@@ -118,19 +124,25 @@ function sessions(env: Record<string, string>, fetchImpl: Fetch, count = 1): Ses
 	return Array.from({ length: count }, () => {
 		const session: Session = {};
 		factory({
-			on: (name: string, handler: Handler) => name === "tool_call" && (session.toolCall = handler),
-			registerCommand: (_name: string, command: { handler: Session["command"] }) => (session.command = command.handler),
+			on: (name: string, handler: Handler) => {
+				if (name === "tool_call") session.toolCall = handler;
+			},
+			registerCommand: (_name: string, command: { handler: Session["command"] }) => {
+				session.command = command.handler;
+			},
 		} as never);
 		return session;
 	});
 }
 
-const answer = (choice: string, pAllow: number): Fetch => async () =>
-	Response.json({
-		model: "typesafe/jev-1.14",
-		answers: { verdict: { type: "choice", choice, probabilities: { allow: pAllow, deny: 1 - pAllow }, confidence: 1 } },
-		usage: { input_tokens: 10, output_tokens: 1 },
-	});
+const answer =
+	(choice: string, pAllow: number): Fetch =>
+	async () =>
+		Response.json({
+			model: "typesafe/jev-1.14",
+			answers: { verdict: { type: "choice", choice, probabilities: { allow: pAllow, deny: 1 - pAllow }, confidence: 1 } },
+			usage: { input_tokens: 10, output_tokens: 1 },
+		});
 const never: Fetch = async () => Promise.reject(new Error("the judge must not be called"));
 const call = (toolName: string, input: Record<string, unknown>) => ({ type: "tool_call", toolName, toolCallId: "c1", input });
 const bash = (command: string) => call("bash", { command });
@@ -216,10 +228,14 @@ describe("tool calls", () => {
 		["network error", async () => Promise.reject(new Error("ECONNRESET"))],
 		["an answer for another question", async () => Response.json({ answers: {}, usage: {} })],
 		["non-JSON body", async () => new Response("<html>")],
-	])("%s blocks as unavailable", async (_name, fetchImpl) => {
-		const [s] = sessions({ ...on }, fetchImpl);
-		expect(await s.toolCall?.(bash("echo ok"), ctx())).toEqual({ block: true, reason: UNAVAILABLE });
-	}, 20_000);
+	])(
+		"%s blocks as unavailable",
+		async (_name, fetchImpl) => {
+			const [s] = sessions({ ...on }, fetchImpl);
+			expect(await s.toolCall?.(bash("echo ok"), ctx())).toEqual({ block: true, reason: UNAVAILABLE });
+		},
+		20_000,
+	);
 
 	test("an unknown model, a chat model, or a missing credential blocks as unavailable", async () => {
 		for (const model of ["openrouter/nope", "jev-1.14"]) {
@@ -230,7 +246,10 @@ describe("tool calls", () => {
 		chat.modelRegistry.find = () => ({ ...MODEL, api: "openai-completions" });
 		const [s] = sessions({ ...on }, never);
 		expect(await s.toolCall?.(bash("echo ok"), chat)).toEqual({ block: true, reason: UNAVAILABLE });
-		expect(await s.toolCall?.(bash("echo ok"), ctx({ sessionManager: { getSessionId: () => "other" } }))).toEqual({ block: true, reason: UNAVAILABLE });
+		expect(await s.toolCall?.(bash("echo ok"), ctx({ sessionManager: { getSessionId: () => "other" } }))).toEqual({
+			block: true,
+			reason: UNAVAILABLE,
+		});
 	});
 
 	test("a rubric that cannot be loaded blocks judged tools and nothing else", async () => {
@@ -246,10 +265,14 @@ describe("tool calls", () => {
 
 	test("the call budget is shared by every session of one process", async () => {
 		let judged = 0;
-		const [main, sub] = sessions({ ...on, OMP_HACKBOT_JUDGE_MAX_CALLS: "1" }, async (...args) => {
-			judged++;
-			return answer("allow", 1)(...args);
-		}, 2);
+		const [main, sub] = sessions(
+			{ ...on, OMP_HACKBOT_JUDGE_MAX_CALLS: "1" },
+			async (...args) => {
+				judged++;
+				return answer("allow", 1)(...args);
+			},
+			2,
+		);
 		expect(await main.toolCall?.(bash("echo 1"), ctx())).toEqual({ input: { command: "echo 1" } });
 		expect(await sub.toolCall?.(bash("echo 2"), ctx())).toEqual({ block: true, reason: UNAVAILABLE });
 		expect(judged).toBe(1);
@@ -259,8 +282,17 @@ describe("tool calls", () => {
 		const log = join(dir, "judge.jsonl");
 		const [s] = sessions({ ...on, OMP_HACKBOT_JUDGE_LOG: log }, answer("deny", 0.02));
 		await s.toolCall?.(bash("curl https://x"), ctx());
-		const [armed, decision] = readFileSync(log, "utf8").trim().split("\n").map(line => JSON.parse(line));
-		expect(armed).toMatchObject({ event: "armed", rubricSha256: sha, policySha256: POLICY, model: "openrouter/typesafe/jev-1.14", minP: 0.8 });
+		const [armed, decision] = readFileSync(log, "utf8")
+			.trim()
+			.split("\n")
+			.map(line => JSON.parse(line));
+		expect(armed).toMatchObject({
+			event: "armed",
+			rubricSha256: sha,
+			policySha256: POLICY,
+			model: "openrouter/typesafe/jev-1.14",
+			minP: 0.8,
+		});
 		expect(decision).toMatchObject({
 			event: "decision",
 			agent: "Main",
@@ -321,7 +353,9 @@ describe("/hackbot-judge", () => {
 		const [s] = sessions({ ...on }, answer("deny", 0));
 		expect(await run(s, "on /no/such/rubric.md")).toEqual([expect.stringContaining("error: hackbot-judge: not attached (")]);
 		expect(await s.toolCall?.(bash("curl https://x"), ctx())).toEqual({ block: true, reason: DENIED });
-		expect(await run(sessions({}, never)[0], "on")).toEqual(["error: hackbot-judge: not attached (no rubric: pass a path, or set OMP_HACKBOT_JUDGE)"]);
+		expect(await run(sessions({}, never)[0], "on")).toEqual([
+			"error: hackbot-judge: not attached (no rubric: pass a path, or set OMP_HACKBOT_JUDGE)",
+		]);
 	});
 
 	test("the SHA-256 pin also guards a rubric attached in the session", async () => {
@@ -342,7 +376,9 @@ describe("/hackbot-judge", () => {
 	});
 
 	test("anything else prints usage", async () => {
-		expect(await run(sessions({ ...on }, never)[0], "bogus")).toEqual(["warning: usage: /hackbot-judge [on [rubric path] | off | try <shell command>]"]);
+		expect(await run(sessions({ ...on }, never)[0], "bogus")).toEqual([
+			"warning: usage: /hackbot-judge [on [rubric path] | off | try <shell command>]",
+		]);
 		expect(await run(sessions({}, never)[0], "try ls")).toEqual(["warning: hackbot-judge: attach a rubric before `try`"]);
 	});
 });

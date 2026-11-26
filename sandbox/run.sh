@@ -6,7 +6,7 @@
 #   hook    live e2e with the file loaded by --hook
 #   plugin  `omp plugin install` this checkout, then live e2e through the installed plugin
 #   git     `omp plugin install github:$PLUGIN_GIT`, then live e2e (tests the published repo)
-#   dogfood a realistic multi-step task under examples/bug-bounty-rubric.md; prints every judgment
+#   dogfood a realistic multi-step task under examples/bug-bounty-rubric.md.example; prints every judgment
 #           (through the plugin when it follows `plugin` or `git`, else through --hook)
 #   shell   interactive shell in the box
 # Environment: OMP_REF (omp release, default v19.2.1), E2E_MODEL, E2E_CASES, SANDBOX_OUT (host

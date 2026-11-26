@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Runs inside the sandbox container (see run.sh). Works on a private copy of the read-only checkout.
 set -uo pipefail
-cp -r /repo "$HOME/plugin" && cd "$HOME/plugin" || exit 1
+# The host's node_modules holds binaries for the host's platform: never reuse it here.
+cp -r /repo "$HOME/plugin" && cd "$HOME/plugin" && rm -rf node_modules || exit 1
 out=/out
 [ -d "$out" ] && [ -w "$out" ] || out="$HOME/out"
 [ "$#" -gt 0 ] || { echo "usage: stages.sh <stage>..." >&2; exit 2; }
@@ -15,7 +16,7 @@ for stage in $@; do
 	echo "=== $stage (omp $(omp --version))"
 	case "$stage" in
 	unit)
-		bun install --silent && bun test && bun run typecheck || status=1
+		bun install --frozen-lockfile && bun run check && bun test || status=1
 		;;
 	hook)
 		e2e hook hook

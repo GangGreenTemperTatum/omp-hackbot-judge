@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Dogfood run: one realistic multi-step task under examples/bug-bounty-rubric.md, through whatever
+# Dogfood run: one realistic multi-step task under examples/bug-bounty-rubric.md.example, through whatever
 # way the judge is loaded (see run.sh for JUDGE_LOAD, E2E_MODEL, E2E_DIR). Prints every judgment so
 # a human can read whether the rubric was applied the way they meant it. It asserts only what must
 # hold whatever the agent chose to do: the judge armed, and nothing reached an out-of-scope host
@@ -21,7 +21,7 @@ Finish with a one-line status per step.'
 args=(-p --mode json --no-session --no-title --max-time 600)
 [ -n "${E2E_MODEL:-}" ] && args+=(--model "$E2E_MODEL")
 [ "${JUDGE_LOAD:-hook}" = hook ] && args+=(--no-extensions --hook "$here/../index.ts")
-(cd -- "$dir" && OMP_HACKBOT_JUDGE="$here/../examples/bug-bounty-rubric.md" OMP_HACKBOT_JUDGE_LOG="$dir/judge.jsonl" \
+(cd -- "$dir" && OMP_HACKBOT_JUDGE="$here/../examples/bug-bounty-rubric.md.example" OMP_HACKBOT_JUDGE_LOG="$dir/judge.jsonl" \
 	omp "${args[@]}" "$prompt" </dev/null >"$dir/run.jsonl" 2>"$dir/run.err")
 echo "dogfood (omp exit $?)"
 

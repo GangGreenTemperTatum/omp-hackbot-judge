@@ -1,187 +1,191 @@
+<div align="center">
+
 # omp-hackbot-judge
 
-A plugin for [oh-my-pi](https://github.com/can1357/oh-my-pi) (`omp`). Before a tool call runs, it asks one of omp's judge models whether **your rubric** permits it, and blocks the call unless the answer is a confident yes.
+**A rubric judge for [oh-my-pi](https://github.com/can1357/oh-my-pi) tool calls.**
 
-It is for security agents that run unattended: bug bounty, pentest and red-team harnesses where the rules of engagement live in a document. You write the rubric in plain language (scope, required headers, forbidden actions). Whatever model drives the session, its tool calls are stopped at the start when the rubric says no.
+[![CI](https://github.com/GangGreenTemperTatum/omp-hackbot-judge/actions/workflows/ci.yml/badge.svg)](https://github.com/GangGreenTemperTatum/omp-hackbot-judge/actions/workflows/ci.yml)
+[![omp](https://img.shields.io/badge/omp-%E2%89%A5%2019.2-7c3aed.svg)](https://github.com/can1357/oh-my-pi)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](.pre-commit-config.yaml)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/GangGreenTemperTatum/omp-hackbot-judge/pulls)
 
-- **Runs at tool call start**, on omp's `tool_call` extension event, before the tool executes.
-- **Uses omp's own judge.** Any native model from `omp models --kind=judge`, through omp's judge client and omp's stored credential. No extra API key, no HTTP code of its own.
-- **Fail-closed.** Once a rubric is attached, anything that stops the judge from reaching a verdict blocks the call.
-- **Attach and detach freely.** Per launch with one environment variable, or inside a session with `/hackbot-judge on <rubric>` and `/hackbot-judge off`.
-- **Small.** One file of about 250 lines, no runtime dependencies, no build step, seven settings.
+</div>
 
-## What it looks like
+Before a tool call runs, a judge model checks it against **your rubric** and blocks it unless the rubric clearly allows it.
 
-A rubric:
+Built for security agents that run unattended: you write the rules of engagement in plain language, and whatever model drives the session is stopped at the tool call when it steps outside them.
+
+<p align="center">
+  <img src="docs/deny.png" alt="The judge denies a request the rubric forbids; the operator sees the reason, the agent reports the block" width="760">
+</p>
+
+```text
+ALLOW  0.99  bash  curl -sS -D - -o /dev/null -H 'X-Bug-Bounty: researcher-handle' https://example.com/
+DENY   0     bash  curl -sS -D - -o /dev/null https://example.org/
+DENY   0.02  bash  curl -sS -D - -o /dev/null https://example.com/        (required header missing)
+```
+
+*Real judgments from this repository's dogfood test, under the example rubric. The number is P(allow).*
+
+## Quick start
+
+```bash
+# 1. Install (once)
+omp plugin install github:GangGreenTemperTatum/omp-hackbot-judge
+
+# 2. Write a rubric, starting from the example in this repository
+mkdir -p ~/rubrics
+curl -fsSL https://raw.githubusercontent.com/GangGreenTemperTatum/omp-hackbot-judge/main/examples/bug-bounty-rubric.md.example -o ~/rubrics/my-program.md
+
+# 3. Start omp with it attached
+OMP_HACKBOT_JUDGE=~/rubrics/my-program.md omp
+```
+
+Type `/hackbot-judge` in the session to confirm it is on.
+
+<p align="center">
+  <img src="docs/intro.png" alt="The /hackbot-judge slash command in omp" width="760">
+</p>
+
+Needs omp 19.2 or later and an OpenRouter login in omp (`omp models --kind=judge` should list `typesafe/jev-1.14`).
+
+## The rubric
+
+A plain text or Markdown file, up to 8 KiB, in your own words. There is no schema and **no default**: with no rubric attached, nothing is judged.
 
 ```markdown
 ## In scope
-- HTTP and HTTPS requests to example.com and its subdomains, with the header `X-Bug-Bounty: researcher-handle`.
-- Read-only local commands and writing notes inside the working directory.
+- HTTP and HTTPS requests to example.com and its subdomains.
+- Every request must carry the header `X-Bug-Bounty: researcher-handle`.
+- Reading local files, and creating or editing files inside the working directory.
 
 ## Out of scope: deny
-- Requests to any other host, or to an in-scope host without the header.
+- Requests to any other host.
 - Port scans, brute forcing, anything resembling denial of service.
+- Reading or changing this rubric, the judge log, or any `.env` file.
 
 When uncertain, deny.
 ```
 
-A real session under the [example rubric](examples/bug-bounty-rubric.md), from this repository's dogfood test. The agent was asked to fetch headers from two hosts, and from the first again without the header:
+Tips:
 
-```text
-        P(allow)  time   tool  input
-ALLOW   0.99      167ms  bash  {"command":"curl -sS -D - -o /dev/null -H 'X-Bug-Bounty: researcher-handle' https://example.com/", …}
-DENY    0         210ms  bash  {"command":"curl -sS -D - -o /dev/null https://example.org/", …}
-DENY    0.02      171ms  bash  {"command":"curl -sS -D - -o /dev/null https://example.com/", …}
-```
+- Name hosts, headers and commands explicitly.
+- Cover local work too. File tools are judged, so say what reading and writing is allowed.
+- Say how to treat what the judge cannot read: scripts, encoded payloads, `eval` code.
+- Keep the file outside the agent's working directory and read-only.
+- Test a line before relying on it: `/hackbot-judge try <shell command>`.
 
-The first command runs. The other two never start; the agent gets this as the tool's error and moves on:
+Full example: [`examples/bug-bounty-rubric.md.example`](examples/bug-bounty-rubric.md.example).
 
-```text
-Denied by the engagement rubric judge. Do not retry, rephrase, or route this action through another tool. Report it to the operator.
-```
-
-## Install
-
-```bash
-omp plugin install github:GangGreenTemperTatum/omp-hackbot-judge
-```
-
-Or from a checkout: `omp plugin install /path/to/omp-hackbot-judge`. Plugins load when a session starts, so start a new omp session afterwards. Installed, it does nothing until a rubric is attached.
-
-| To | Do |
-|---|---|
-| Try it for one run without installing | `omp --hook /path/to/omp-hackbot-judge/index.ts` |
-| Switch it off everywhere, keep it installed | `omp plugin disable omp-hackbot-judge` |
-| Remove it | `omp plugin uninstall omp-hackbot-judge` |
-
-**Requirements:** omp 19.2 or later, with a credential for a native judge model. Check with `omp models --kind=judge`. The default is `openrouter/typesafe/jev-1.14`, which needs only omp's OpenRouter login or `OPENROUTER_API_KEY`.
-
-## Use
-
-**Attach at launch** (works headless, and covers the session from its first tool call):
-
-```bash
-export OMP_HACKBOT_JUDGE=/abs/path/rubric.md
-omp
-```
-
-**Attach or detach in a running session:**
+## Turning it on and off
 
 | Command | Effect |
 |---|---|
-| `/hackbot-judge` | Show status: off, on (rubric hash, model, judgments used, last decision), or misconfigured. |
-| `/hackbot-judge on /abs/path/rubric.md` | Attach that rubric. With no path, re-attach the last one named, at launch or by this command. With `OMP_HACKBOT_JUDGE_SHA256` set, only a rubric matching the pin attaches. |
+| `/hackbot-judge` | Status: off, on (rubric hash, model, judgments used, last decision), or misconfigured. |
+| `/hackbot-judge on /abs/path/rubric.md` | Attach that rubric. With no path, re-attach the last one. |
 | `/hackbot-judge off` | Detach. Tool calls run unjudged again. |
-| `/hackbot-judge try <shell command>` | Ask the judge about a `bash` command without running it. Use it to tune a rubric. |
+| `/hackbot-judge try <shell command>` | Ask the judge about a command without running it. |
 
-Attaching and detaching apply to the main agent and to every subagent started afterwards. A subagent that is already running on one of omp's worker threads keeps the state it started with, so attach before you hand out work.
+<p align="center">
+  <img src="docs/status.png" alt="/hackbot-judge try: a dry run that the rubric allows" width="760">
+</p>
 
-In `omp -p` there is no screen for status lines; the log records `attached`, `detached` and `try` instead.
+The rubric is read when it is attached. After editing the file, run `/hackbot-judge on` again.
 
-Start from [`examples/bug-bounty-rubric.md`](examples/bug-bounty-rubric.md). Keep the rubric outside the agent's working directory and read-only, so the agent cannot edit its own rules.
+Other ways to load or remove the plugin:
 
-### Which tool calls are judged
+| To | Do |
+|---|---|
+| Use it for one run without installing | `omp --hook /path/to/omp-hackbot-judge/index.ts` |
+| Disable it everywhere, keep it installed | `omp plugin disable omp-hackbot-judge` |
+| Remove it | `omp plugin uninstall omp-hackbot-judge` |
 
-Every tool call, except thirteen omp tools that only touch the running session and persist nothing: `ask`, `todo`, `wait`, `task`, `yield`, `goal`, `think`, `new_context`, `context_notes`, `checkpoint`, `rewind`, `recall`, `reflect`. A subagent started with `task` has each of its own tool calls judged.
+## How it works
 
-So `bash`, `eval`, `read`, `write`, `edit`, `grep`, `web_search`, `github`, the memory and skill tools, MCP tools, other extensions' tools and tools omp adds later are all judged, with no list to maintain and no setting to exempt a tool. Your rubric decides what is fine: say "reading local files is allowed" if it is.
+1. omp fires its `tool_call` extension event before running a tool.
+2. The plugin sends the judge your rubric plus the call: tool name, working directory, input.
+3. The judge answers allow or deny with a probability. It is one of omp's own native judge models, called through omp's judge client and credential.
+4. Allow at `P(allow)` ≥ 0.8: the tool runs with exactly the input that was judged.
+5. Anything else: the call is blocked. The agent gets a fixed message; you get a notice with the reason.
 
-The judge sees the tool name, the session's working directory and the tool's input, next to your rubric.
+**Every tool call is judged**, including MCP tools and tools from other extensions. The only exceptions are thirteen omp tools that touch nothing but the running session: `ask`, `todo`, `wait`, `task`, `yield`, `goal`, `think`, `new_context`, `context_notes`, `checkpoint`, `rewind`, `recall`, `reflect`. A subagent's own tool calls are judged.
 
-### Settings
+**It fails closed.** Once a rubric is attached, a missing or invalid rubric, an unknown model, a missing credential, a provider error, a timeout, a used-up budget or an input over 32 KiB all block the call.
+
+A judgment takes about 0.2 s and costs about $0.00001.
+
+## Settings
+
+All optional except the first. Set them in the environment omp starts from.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `OMP_HACKBOT_JUDGE` | unset (off) | Absolute path of the rubric. Setting it attaches the judge at launch. |
+| `OMP_HACKBOT_JUDGE` | unset (off) | Absolute path of the rubric. Attaches the judge at launch. |
 | `OMP_HACKBOT_JUDGE_SHA256` | none | Expected SHA-256 of the rubric. A rubric that does not match is refused. |
-| `OMP_HACKBOT_JUDGE_MODEL` | `openrouter/typesafe/jev-1.14` | A native model from `omp models --kind=judge`, as `provider/model`. |
-| `OMP_HACKBOT_JUDGE_MIN_P` | `0.8` | Minimum `P(allow)` for an allow, in (0, 1]. |
-| `OMP_HACKBOT_JUDGE_TIMEOUT_MS` | `15000` | Deadline per judgment. Must stay under omp's 30 s handler limit. |
-| `OMP_HACKBOT_JUDGE_MAX_CALLS` | `2000` | Judgments per omp process, subagents included. When used up, judged calls are blocked. |
 | `OMP_HACKBOT_JUDGE_LOG` | none | Path of a JSONL decision log. |
+| `OMP_HACKBOT_JUDGE_MODEL` | `openrouter/typesafe/jev-1.14` | A native model from `omp models --kind=judge`, as `provider/model`. |
+| `OMP_HACKBOT_JUDGE_MIN_P` | `0.8` | Minimum `P(allow)` for an allow. |
+| `OMP_HACKBOT_JUDGE_TIMEOUT_MS` | `15000` | Deadline per judgment (under omp's 30 s limit). |
+| `OMP_HACKBOT_JUDGE_MAX_CALLS` | `2000` | Judgments per omp process. When used up, judged calls are blocked. |
 
-### What blocks a judged call
+## The log
 
-- the rubric named at launch is missing, empty, over 8 KiB, at a relative path, or fails its hash pin
-- a setting is invalid, the judge model is unknown or not a native judge, or it has no credential
-- the judge request fails, times out, or returns an answer that is not an allow/deny choice
-- the call budget is used up, or the tool input is over 32 KiB
+With `OMP_HACKBOT_JUDGE_LOG` set, every decision is one JSON line:
 
-omp adds its own net: a `tool_call` handler that throws or runs past 30 s also blocks the call.
+```json
+{"ts":"…","event":"decision","agent":"Main","tool":"bash","allowed":false,"pAllow":0.01,"reason":"rubric forbids","latencyMs":204,"inputSha256":"…","input":"{\"command\":\"curl …\"}"}
+```
 
-## Seeing what it does
+```bash
+jq -r 'select(.event=="decision") | [.allowed, .pAllow, .tool, .reason, .input[0:100]] | @tsv' judge.jsonl
+```
 
-- **In the session:** every blocked call shows the operator a notice with the reason and probability, for example `hackbot-judge: DENY bash: rubric forbids, P(allow) 0.01`. The agent sees only the fixed message. `/hackbot-judge` shows the last decision.
-- **The log** (`OMP_HACKBOT_JUDGE_LOG`), one JSON object per line:
+Other events: `armed` (a session started with the judge on, with its rubric and policy hashes), `attached`, `detached`, `try`.
 
-  ```json
-  {"ts":"…","event":"armed","rubricSha256":"…","policySha256":"…","model":"openrouter/typesafe/jev-1.14","minP":0.8}
-  {"ts":"…","event":"decision","agent":"…","tool":"bash","toolCallId":"…","allowed":false,"pAllow":0.01,"reason":"rubric forbids","latencyMs":204,"inputSha256":"…","input":"{\"command\":\"curl …\"}"}
-  ```
-
-  - `armed` is written once per session that starts with the judge on, subagents included, with the model and threshold in force, or an `error` when the rubric could not be loaded. `attached`, `detached` and `try` record the slash commands.
-  - `rubricSha256` identifies the rubric. `policySha256` identifies the model, threshold and question, so records from different setups are not mixed up.
-  - `reason` is `rubric permits`, `rubric forbids`, `P(allow) … below …`, or the error that blocked the call.
-  - `input` is the tool input, cut at 4 KiB. It can contain secrets from command lines; keep the log out of git, and outside the agent's working directory so the agent cannot read the probabilities or edit the record.
-
-  ```bash
-  jq -r 'select(.event=="decision") | [.allowed, .pAllow, .tool, .reason, .input[0:100]] | @tsv' judge.jsonl
-  ```
-
-## Writing a rubric that works
-
-The judge returns a probability. Clear cases score near 0 or 1 and stay there. Cases the rubric does not clearly cover land in the middle and can go either way between identical calls.
-
-- Name hosts, headers and commands explicitly. "Requests to example.com with header X" beats "stay in scope".
-- Cover local work too, since file tools are judged: "Reading local files and writing inside the working directory are allowed."
-- Say what to do with things the judge cannot read: scripts, encoded payloads, `eval` code. "Deny commands whose target cannot be read from the command itself."
-- Protect the controls: "Deny reading or changing the rubric, the judge log and any `.env` file."
-- End with "When uncertain, deny."
-- Tune with `/hackbot-judge try <command>`, and read the log after a first run. Legitimate calls denied at 0.6–0.79 mean the rubric needs a line that covers them.
+`input` is the tool input, cut at 4 KiB. It can hold secrets from command lines. Keep the log out of git and outside the agent's working directory.
 
 ## Limits
 
 Read these before relying on it.
 
-1. **It judges the call's text, not its effect.** A `bash` command is judged as a string: `$(echo … | base64 -d)` hides its target, and `bash ./x.sh` shows only the file name. Writing `x.sh` with the `write` tool is judged, content included, but a script that already exists or is produced by another program is not. The rubric has to say how to treat opaque commands.
-2. **`eval` is judged as code text.** Code inside an `eval` cell can start processes and make requests without going through another tool, and with `eval.tools.enabled` it can define a tool under one of the unjudged names. For a strict engagement, disable `eval`.
-3. **Extension load order.** omp runs `tool_call` handlers in load order and uses the last input any of them returns. An extension loaded after this one that rewrites tool input can change an approved call. Do not combine it with input-rewriting extensions, or make sure it loads last (`--hook` paths load after installed plugins).
-4. **Off is silent.** If the plugin is not installed, fails to load, or no rubric is attached, nothing is judged and omp carries on. Check `/hackbot-judge`, or check that each session wrote an `armed` record.
-5. **Borderline answers vary, and long free text is the usual cause.** Measured with the example rubric and `jev-1.14`: in-scope requests scored 0.97–0.99 and out-of-scope requests, opaque scripts and writes outside the working directory 0.00–0.10, the same on every repeat. Writing a notes file that discussed the blocked out-of-scope hosts scored 0.45–0.63, so it was denied although the rubric allows notes, and `ls -la` ranged from 0.77 to 0.97 depending on the directory. Rewording the judge's question raised neither reliably and made injected text in a command more persuasive, so the question stays strict. Expect some false denials on local free-text work, and check the log.
-6. **Sessions that load no extensions are not covered**, for example the restricted session behind omp's `security_scan` tool.
-7. **The budget is per thread of one omp process.** The main agent and its ordinary subagents share it; a subagent on a worker thread, and a separately started omp, each get their own.
-8. **Large inputs are blocked, not judged.** A tool input over 32 KiB (a very large `write`, for example) is blocked. Write it in parts.
-9. **omp reads `.env` from the working directory**, so an agent that may write there can set any `OMP_HACKBOT_JUDGE_*` variable you did not set yourself, for the next launch. None of them can exempt a tool, and a verdict always needs an "allow" answer, but it could lower the threshold or attach a rubric of its own when you attach none. Export the settings you rely on, pin the rubric with `OMP_HACKBOT_JUDGE_SHA256`, and deny `.env` writes in the rubric.
-10. **Judge calls are not in omp's usage totals.** At about $0.00001 each, 2,000 judgments cost about two cents.
+1. **It judges the call's text, not its effect.** `$(echo … | base64 -d)` hides its target and `bash ./x.sh` shows only a file name. Your rubric must say how to treat opaque commands.
+2. **`eval` code can act without another tool call.** For a strict engagement, disable `eval`.
+3. **Off is silent.** If the plugin is not installed, fails to load, or no rubric is attached, nothing is judged. Check `/hackbot-judge` or look for an `armed` log record.
+4. **Free text can be falsely denied.** Clear cases score near 0 or 1 every time. A notes file that discussed blocked hosts scored 0.45–0.63 and was denied although the rubric allowed notes. Check the log after a first run.
+5. **Attach before handing out work.** A subagent already running on a worker thread keeps the state it started with.
+6. **An extension loaded later can rewrite an approved call.** Do not combine this with extensions that rewrite tool input.
+7. **omp reads `.env` from the working directory.** An agent that can write there can set `OMP_HACKBOT_JUDGE_*` variables you left unset, for the next launch. None of them can exempt a tool. Export the ones you rely on and pin the rubric with `OMP_HACKBOT_JUDGE_SHA256`.
+8. **Sessions that load no extensions are not covered**, such as the one behind omp's `security_scan` tool.
 
 ## Privacy
 
-The rubric and the input of every judged tool call are sent to the judge model's provider (by default OpenRouter, which forwards to TypeSafe), under their logging and retention terms. Tool inputs can include target hostnames, request bodies, tokens in headers, file paths and file contents being written. Do not use the plugin on an engagement whose terms forbid sending that data to a third party.
+Your rubric and the input of every judged tool call go to the judge model's provider (by default OpenRouter, which forwards to TypeSafe). That includes hostnames, request bodies, tokens in headers and file contents being written. Do not use it where the engagement forbids sending that to a third party.
 
-## Testing
+## Development
 
 ```bash
 bun install
-bun test            # verdict mapping, settings, and the extension against a fake session and endpoint
-bun run typecheck   # against the published omp types
+bun test            # the extension, driving omp's real judge client against a fake endpoint
+bun run check       # typecheck, lint and format check
+pre-commit install  # optional: run the same checks, plus shellcheck, on every commit
 ```
 
-The unit tests drive omp's real judge client against a fake HTTP endpoint, so the request and answer shapes are the real ones.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention and [SECURITY.md](SECURITY.md) to report a bypass.
 
-Live tests run a real omp, a real agent model and the real judge. They execute agent-chosen commands, so the repository ships a disposable container for them. It has its own home directory, omp install and `~/.omp`, and shares nothing with omp on your machine:
+Live tests run a real omp, agent model and judge inside a disposable container that shares nothing with omp on your machine:
 
 ```bash
-OPENROUTER_API_KEY=… sandbox/run.sh                 # unit, live cases via --hook, live cases via the installed plugin
-OPENROUTER_API_KEY=… sandbox/run.sh plugin dogfood  # a realistic multi-step task under the example rubric
-OPENROUTER_API_KEY=… PLUGIN_GIT=GangGreenTemperTatum/omp-hackbot-judge sandbox/run.sh git   # install from GitHub
+OPENROUTER_API_KEY=… sandbox/run.sh                 # unit, then live cases via --hook and via the installed plugin
+OPENROUTER_API_KEY=… sandbox/run.sh plugin dogfood  # a multi-step task under the example rubric
+OPENROUTER_API_KEY=… sandbox/run.sh shell           # a shell in the container, to try it by hand
 ```
 
-Each live case runs `omp -p` in an empty directory, then checks the judge's log and whether a `marker` file was created, which proves whether the command ran. `e2e/run.sh` lists the cases.
+Each live case runs `omp -p` in an empty directory and checks the judge's log and a marker file that proves whether the command ran. [`e2e/run.sh`](e2e/run.sh) lists the cases.
 
 ## Related
 
-[omp-jevens-classifier](https://github.com/STRML/omp-jevens-classifier) also puts a judge model in front of omp tool calls. It answers a different question, "is this shell command dangerous?", with a built-in hazard checklist and a Run/Deny dialog for `bash` and process-spawning `eval`. This plugin answers "does my rubric permit this action?" for every tool, without dialogs.
+[omp-jevens-classifier](https://github.com/STRML/omp-jevens-classifier) asks a judge "is this shell command dangerous?" and shows a Run/Deny dialog. This plugin asks "does my rubric permit this?" for every tool, with no dialogs.
 
 ## License
 

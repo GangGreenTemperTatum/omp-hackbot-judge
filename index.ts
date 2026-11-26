@@ -17,11 +17,12 @@
  *   OMP_HACKBOT_JUDGE_MAX_CALLS   judgments per omp process, shared by its subagents (default 2000)
  *   OMP_HACKBOT_JUDGE_LOG         JSONL decision log; records tool inputs, so keep it out of git
  */
-import { createNativeJudge, type FetchImpl, type JsonValue } from "@oh-my-pi/pi-ai";
-import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
+
 import { createHash } from "node:crypto";
 import { appendFileSync, readFileSync } from "node:fs";
 import { isAbsolute } from "node:path";
+import { createNativeJudge, type FetchImpl, type JsonValue } from "@oh-my-pi/pi-ai";
+import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 
 type Env = Record<string, string | undefined>;
 type JudgeContext = Pick<ExtensionContext, "modelRegistry" | "sessionManager" | "cwd">;
@@ -59,8 +60,19 @@ export const UNAVAILABLE =
  * tools omp adds later are covered without a change here.
  */
 export const SESSION_TOOLS: ReadonlySet<string> = new Set([
-	"ask", "todo", "wait", "task", "yield", "goal", "think", "new_context", "context_notes",
-	"checkpoint", "rewind", "recall", "reflect",
+	"ask",
+	"todo",
+	"wait",
+	"task",
+	"yield",
+	"goal",
+	"think",
+	"new_context",
+	"context_notes",
+	"checkpoint",
+	"rewind",
+	"recall",
+	"reflect",
 ]);
 
 /** The one question put to the judge. Part of the policy hash: editing it changes every verdict. */
@@ -143,7 +155,10 @@ export async function askJudge(config: JudgeConfig, action: JsonValue, ctx: Judg
 	});
 	// The rubric stays in `state` beside the action: measured live, moving it into the question
 	// instructions made injected "rubric addendum" text in the action more persuasive.
-	const result = await judge.judge({ state: { rubric: config.rubric, proposed_action: action }, questions: { verdict: QUESTION } }, { signal });
+	const result = await judge.judge(
+		{ state: { rubric: config.rubric, proposed_action: action }, questions: { verdict: QUESTION } },
+		{ signal },
+	);
 	return result.answers.verdict;
 }
 
