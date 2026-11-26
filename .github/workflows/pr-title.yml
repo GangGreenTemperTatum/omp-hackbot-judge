@@ -1,6 +1,8 @@
 name: pr-title
 on:
-  pull_request_target:
+  # Needed so pull requests from forks are checked too. Safe here: the job checks out and runs no
+  # pull request code, and its token can only read pull requests.
+  pull_request_target: # zizmor: ignore[dangerous-triggers]
     types: [opened, edited, synchronize, reopened]
 permissions:
   pull-requests: read
