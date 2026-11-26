@@ -32,6 +32,10 @@ docs: add a dry-run example
 
 The `commit-msg` hook checks commits locally and CI checks the pull request title. Pull requests are squash-merged, so the title becomes the commit.
 
+## AI review
+
+[PR-Agent](https://github.com/The-PR-Agent/pr-agent) reviews pull requests opened from branches of this repository. It comments only: it cannot push or merge. A pull request from a fork is reviewed when the maintainer comments `/review` on it. The security model is at the top of [`.github/workflows/pr-agent.yml`](.github/workflows/pr-agent.yml).
+
 ## Principles
 
 - **Fail closed.** If the judge cannot reach a verdict, the call is blocked.
